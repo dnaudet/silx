@@ -40,10 +40,8 @@ def configuration(parent_package='', top_path=None):
     # =====================================
     histo_dir = 'histogramnd'
     histo_src = ['/'.join([histo_dir, srcf])
-                 for srcf in ['histogramnd.pyx',
-                              'src/histogramnd_c.c']]
-    histo_inc = ['/'.join([histo_dir, 'include']),
-                 numpy.get_include()]
+                 for srcf in ['histogramnd.pyx']]
+    histo_inc = [numpy.get_include()]
 
     config.add_extension('histogramnd',
                          sources=histo_src,

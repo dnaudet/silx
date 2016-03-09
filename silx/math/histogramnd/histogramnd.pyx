@@ -250,17 +250,17 @@ def histogramnd(sample,
     option_flags = 0
 
     if weight_min is not None:
-        option_flags |= histogramnd_c.HISTO_WEIGHT_MIN
+        option_flags |= HISTO_WEIGHT_MIN
     else:
         weight_min = 0
 
     if weight_max is not None:
-        option_flags |= histogramnd_c.HISTO_WEIGHT_MAX
+        option_flags |= HISTO_WEIGHT_MAX
     else:
         weight_max = 0
 
     if last_bin_closed is not None and last_bin_closed:
-        option_flags |= histogramnd_c.HISTO_LAST_BIN_CLOSED
+        option_flags |= HISTO_LAST_BIN_CLOSED
 
     sample_type = sample.dtype
 
