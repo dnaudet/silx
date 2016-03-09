@@ -355,11 +355,6 @@ def _histogramnd_fused(sample_t[:] i_sample,
         int filt_max_weight = 0
         int last_bin_closed = 0
 
-    if sample_t is numpy.int32_t:
-        print('This is int32_t!')
-    elif sample_t is numpy.int64_t:
-        print('This is int64_t!')
-
     for i in range(i_n_dims):
         g_min[i] = i_bins_rng[2*i]
         g_max[i] = i_bins_rng[2*i+1]
