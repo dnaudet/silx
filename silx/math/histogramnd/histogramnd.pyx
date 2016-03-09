@@ -28,9 +28,25 @@ __date__ = "01/02/2016"
 
 cimport numpy
 cimport cython
-import numpy as np
+import numpy
 
-cimport histogramnd_c
+cdef enum _opt_type:
+    HISTO_NONE              = 0
+    HISTO_WEIGHT_MIN        = 1,       # Filter weights with i_weight_min.
+    HISTO_WEIGHT_MAX        = 1 << 1,  # Filter weights with i_weight_max.
+    HISTO_LAST_BIN_CLOSED   = 1 << 2   # Last bin is closed.
+
+ctypedef fused sample_t:
+    numpy.float64_t
+    numpy.float32_t
+    numpy.int32_t
+    numpy.int64_t
+
+ctypedef fused weights_t:
+    numpy.float64_t
+    numpy.float32_t
+    numpy.int32_t
+    numpy.int64_t
 
 
 def histogramnd(sample,
@@ -148,8 +164,8 @@ def histogramnd(sample,
         # making sure the sample and weights sizes are coherent
         # 2 different cases : 2D sample (N,M) and 1D (N)
         if len(w_shape) != 1 or w_shape[0] != s_shape[0]:
-                raise ValueError('<weights> must be an array whose length '
-                                 'is equal to the number of samples.')
+            raise ValueError('<weights> must be an array whose length '
+                             'is equal to the number of samples.')
 
         weights_type = weights.dtype
     else:
@@ -159,7 +175,7 @@ def histogramnd(sample,
     # (this allows the user to provide native python lists,
     #   => easier for testing)
     i_bins_rng = bins_rng
-    bins_rng = np.array(bins_rng)
+    bins_rng = numpy.array(bins_rng)
     err_bins_rng = False
 
     if n_dims == 1:
@@ -182,9 +198,9 @@ def histogramnd(sample,
                                    n_dims=n_dims))
 
     # checking n_bins size
-    n_bins = np.array(n_bins, ndmin=1)
+    n_bins = numpy.array(n_bins, ndmin=1)
     if len(n_bins) == 1:
-        n_bins = np.tile(n_bins, n_dims)
+        n_bins = numpy.tile(n_bins, n_dims)
     elif n_bins.shape != (n_dims,):
         raise ValueError('n_bins must be either a scalar (same number '
                          'of bins for all dimensions) or '
@@ -192,44 +208,44 @@ def histogramnd(sample,
                          'dimension).')
 
     # checking if None is in n_bins, otherwise a rather cryptic
-    #   exception is thrown when calling np.zeros
+    #   exception is thrown when calling numpy.zeros
     # also testing for negative/null values
-    if np.any(np.equal(n_bins, None)) or np.any(n_bins <= 0):
+    if numpy.any(numpy.equal(n_bins, None)) or numpy.any(n_bins <= 0):
         raise ValueError('<n_bins> : only positive values allowed.')
 
     output_shape = tuple(n_bins)
 
     # checking the histo array, if provided
     if histo is None:
-        histo = np.zeros(output_shape, dtype=np.uint32)
+        histo = numpy.zeros(output_shape, dtype=numpy.uint32)
     else:
         if histo.shape != output_shape:
             raise ValueError('Provided <histo> array doesn\'t have '
                              'a shape compatible with <n_bins> '
                              ': should be {0} instead of {1}.'
                              ''.format(output_shape, histo.shape))
-        if histo.dtype != np.uint32:
+        if histo.dtype != numpy.uint32:
             raise ValueError('Provided <histo> array doesn\'t have '
                              'the expected type '
                              ': should be {0} instead of {1}.'
-                             ''.format(np.uint32, histo.dtype))
+                             ''.format(numpy.uint32, histo.dtype))
 
     # checking the cumul array, if provided
     if weights_type is None:
         cumul = None
     elif cumul is None:
-        cumul = np.zeros(output_shape, dtype=np.double)
+        cumul = numpy.zeros(output_shape, dtype=numpy.double)
     else:
         if cumul.shape != output_shape:
             raise ValueError('Provided <cumul> array doesn\'t have '
                              'a shape compatible with <n_bins> '
                              ': should be {0} instead of {1}.'
                              ''.format(output_shape, cumul.shape))
-        if cumul.dtype != np.float:
+        if cumul.dtype != numpy.float:
             raise ValueError('Provided <cumul> array doesn\'t have '
                              'the expected type '
                              ': should be {0} instead of {1}.'
-                             ''.format(np.double, cumul.dtype))
+                             ''.format(numpy.double, cumul.dtype))
 
     option_flags = 0
 
@@ -259,175 +275,40 @@ def histogramnd(sample,
                         'and weights:{1}.'
                         ''.format(sample_type, weights_type))
 
-    sample_c = np.ascontiguousarray(sample.reshape((sample.size,)))
+    sample_c = numpy.ascontiguousarray(sample.reshape((sample.size,)))
 
-    weights_c = (np.ascontiguousarray(weights.reshape((weights.size,)))
+    weights_c = (numpy.ascontiguousarray(weights.reshape((weights.size,)))
                  if weights is not None else None)
 
-    bins_rng_c = np.ascontiguousarray(bins_rng.reshape((bins_rng.size,)),
-                                      dtype=sample_type)
+    bins_rng_c = numpy.ascontiguousarray(bins_rng.reshape((bins_rng.size,)),
+                                         dtype=sample_type)
 
-    n_bins_c = np.ascontiguousarray(n_bins.reshape((n_bins.size,)),
-                                    dtype=np.int32)
+    n_bins_c = numpy.ascontiguousarray(n_bins.reshape((n_bins.size,)),
+                                       dtype=numpy.int32)
 
-    histo_c = np.ascontiguousarray(histo.reshape((histo.size,)))
+    histo_c = numpy.ascontiguousarray(histo.reshape((histo.size,)))
 
     if cumul is not None:
-        cumul_c = np.ascontiguousarray(cumul.reshape((cumul.size,)))
+        cumul_c = numpy.ascontiguousarray(cumul.reshape((cumul.size,)))
     else:
         cumul_c = None
 
-    histo_rc = 0
-
-    # this aint pretty...
-    if sample_type == np.float64:
-
-        if weights_type == np.float64 or weights_type is None:
-
-            histo_rc = _histogramnd_double_double(sample_c,
-                                                  weights_c,
-                                                  n_dims,
-                                                  n_elem,
-                                                  bins_rng_c,
-                                                  n_bins_c,
-                                                  histo_c,
-                                                  cumul_c,
-                                                  option_flags,
-                                                  weight_min=weight_min,
-                                                  weight_max=weight_max)
-
-        elif weights_type == np.float32:
-
-            histo_rc = _histogramnd_double_float(sample_c,
-                                                 weights_c,
-                                                 n_dims,
-                                                 n_elem,
-                                                 bins_rng_c,
-                                                 n_bins_c,
-                                                 histo_c,
-                                                 cumul_c,
-                                                 option_flags,
-                                                 weight_min=weight_min,
-                                                 weight_max=weight_max)
-
-        elif weights_type == np.int32:
-
-            histo_rc = _histogramnd_double_int32_t(sample_c,
-                                                   weights_c,
-                                                   n_dims,
-                                                   n_elem,
-                                                   bins_rng_c,
-                                                   n_bins_c,
-                                                   histo_c,
-                                                   cumul_c,
-                                                   option_flags,
-                                                   weight_min=weight_min,
-                                                   weight_max=weight_max)
-
-        else:
-            raise_unsupported_type()
-
-    elif sample_type == np.float32:
-
-        if weights_type == np.float64 or weights_type is None:
-
-            histo_rc = _histogramnd_float_double(sample_c,
-                                                 weights_c,
-                                                 n_dims,
-                                                 n_elem,
-                                                 bins_rng_c,
-                                                 n_bins_c,
-                                                 histo_c,
-                                                 cumul_c,
-                                                 option_flags,
-                                                 weight_min=weight_min,
-                                                 weight_max=weight_max)
-
-        elif weights_type == np.float32:
-
-            histo_rc = _histogramnd_float_float(sample_c,
-                                                weights_c,
-                                                n_dims,
-                                                n_elem,
-                                                bins_rng_c,
-                                                n_bins_c,
-                                                histo_c,
-                                                cumul_c,
-                                                option_flags,
-                                                weight_min=weight_min,
-                                                weight_max=weight_max)
-
-        elif weights_type == np.int32:
-
-            histo_rc = _histogramnd_float_int32_t(sample_c,
-                                                  weights_c,
-                                                  n_dims,
-                                                  n_elem,
-                                                  bins_rng_c,
-                                                  n_bins_c,
-                                                  histo_c,
-                                                  cumul_c,
-                                                  option_flags,
-                                                  weight_min=weight_min,
-                                                  weight_max=weight_max)
-
-        else:
-            raise_unsupported_type()
-
-    elif sample_type == np.int32:
-
-        if weights_type == np.float64 or weights_type is None:
-
-            histo_rc = _histogramnd_int32_t_double(sample_c,
-                                                   weights_c,
-                                                   n_dims,
-                                                   n_elem,
-                                                   bins_rng_c,
-                                                   n_bins_c,
-                                                   histo_c,
-                                                   cumul_c,
-                                                   option_flags,
-                                                   weight_min=weight_min,
-                                                   weight_max=weight_max)
-
-        elif weights_type == np.float32:
-
-            histo_rc = _histogramnd_int32_t_float(sample_c,
-                                                  weights_c,
-                                                  n_dims,
-                                                  n_elem,
-                                                  bins_rng_c,
-                                                  n_bins_c,
-                                                  histo_c,
-                                                  cumul_c,
-                                                  option_flags,
-                                                  weight_min=weight_min,
-                                                  weight_max=weight_max)
-
-        elif weights_type == np.int32:
-
-            histo_rc = _histogramnd_int32_t_int32_t(sample_c,
-                                                    weights_c,
-                                                    n_dims,
-                                                    n_elem,
-                                                    bins_rng_c,
-                                                    n_bins_c,
-                                                    histo_c,
-                                                    cumul_c,
-                                                    option_flags,
-                                                    weight_min=weight_min,
-                                                    weight_max=weight_max)
-
-        else:
-            raise_unsupported_type()
-
-    else:
+    try:
+        histo_rc = _histogramnd_fused(sample_c,
+                                      weights_c,
+                                      n_dims,
+                                      n_elem,
+                                      bins_rng_c,
+                                      n_bins_c,
+                                      histo_c,
+                                      cumul_c,
+                                      option_flags,
+                                      weight_min,
+                                      weight_max)
+    except TypeError as ex:
         raise_unsupported_type()
 
-    if histo_rc != histogramnd_c.HISTO_OK:
-        if histo_rc == histogramnd_c.HISTO_ERR_ALLOC:
-            raise MemoryError('histogramnd failed to allocate memory.')
-        else:
+    if histo_rc != 0:
             raise Exception('histogramnd returned an error : {0}'
                             ''.format(histo_rc))
 
@@ -435,7 +316,6 @@ def histogramnd(sample,
 
 
 # =====================
-#  double sample
 # =====================
 
 
@@ -443,268 +323,127 @@ def histogramnd(sample,
 @cython.boundscheck(False)
 @cython.initializedcheck(False)
 @cython.nonecheck(False)
-cdef int _histogramnd_double_double(double[:] sample,
-                                    double[:] weights,
-                                    int n_dims,
-                                    int n_elem,
-                                    double[:] bins_rng,
-                                    int[:] n_bins,
-                                    numpy.uint32_t[:] histo,
-                                    double[:] cumul,
-                                    int option_flags,
-                                    double weight_min,
-                                    double weight_max) nogil:
+@cython.cdivision(True)
+def _histogramnd_fused(sample_t[:] i_sample,
+                       weights_t[:] i_weights,
+                       int i_n_dims,
+                       int i_n_elems,
+                       sample_t[:] i_bins_rng,
+                       int[:] i_n_bins,
+                       numpy.uint32_t[:] o_histo,
+                       numpy.float64_t[:] o_cumul,
+                       int i_opt_flags,
+                       weights_t i_weight_min,
+                       weights_t i_weight_max):
 
-    return histogramnd_c.histogramnd_double_double(&sample[0],
-                                                   &weights[0],
-                                                   n_dims,
-                                                   n_elem,
-                                                   &bins_rng[0],
-                                                   &n_bins[0],
-                                                   &histo[0],
-                                                   &cumul[0],
-                                                   option_flags,
-                                                   weight_min,
-                                                   weight_max)
+    cdef:
+        int i = 0
+        long elem_idx = 0
+        long max_idx = 0
+        long weight_idx = 0
 
+        # computed bin index (i_sample -> grid)
+        long bin_idx = 0
 
-@cython.wraparound(False)
-@cython.boundscheck(False)
-@cython.initializedcheck(False)
-@cython.nonecheck(False)
-cdef int _histogramnd_double_float(double[:] sample,
-                                   float[:] weights,
-                                   int n_dims,
-                                   int n_elem,
-                                   double[:] bins_rng,
-                                   int[:] n_bins,
-                                   numpy.uint32_t[:] histo,
-                                   double[:] cumul,
-                                   int option_flags,
-                                   float weight_min,
-                                   float weight_max) nogil:
+        sample_t elem_coord = 0
 
-    return histogramnd_c.histogramnd_double_float(&sample[0],
-                                                  &weights[0],
-                                                  n_dims,
-                                                  n_elem,
-                                                  &bins_rng[0],
-                                                  &n_bins[0],
-                                                  &histo[0],
-                                                  &cumul[0],
-                                                  option_flags,
-                                                  weight_min,
-                                                  weight_max)
+        sample_t[50] g_min
+        sample_t[50] g_max
+        sample_t[50] bins_range
 
+        int filt_min_weight = 0
+        int filt_max_weight = 0
+        int last_bin_closed = 0
 
-@cython.wraparound(False)
-@cython.boundscheck(False)
-@cython.initializedcheck(False)
-@cython.nonecheck(False)
-cdef int _histogramnd_double_int32_t(double[:] sample,
-                                     numpy.int32_t[:] weights,
-                                     int n_dims,
-                                     int n_elem,
-                                     double[:] bins_rng,
-                                     int[:] n_bins,
-                                     numpy.uint32_t[:] histo,
-                                     double[:] cumul,
-                                     int option_flags,
-                                     numpy.int32_t weight_min,
-                                     numpy.int32_t weight_max) nogil:
+    if sample_t is numpy.int32_t:
+        print('This is int32_t!')
+    elif sample_t is numpy.int64_t:
+        print('This is int64_t!')
 
-    return histogramnd_c.histogramnd_double_int32_t(&sample[0],
-                                                    &weights[0],
-                                                    n_dims,
-                                                    n_elem,
-                                                    &bins_rng[0],
-                                                    &n_bins[0],
-                                                    &histo[0],
-                                                    &cumul[0],
-                                                    option_flags,
-                                                    weight_min,
-                                                    weight_max)
+    for i in range(i_n_dims):
+        g_min[i] = i_bins_rng[2*i]
+        g_max[i] = i_bins_rng[2*i+1]
+        bins_range[i] = g_max[i] - g_min[i]
 
+    # Testing the option flags
+    if i_opt_flags & HISTO_WEIGHT_MIN:
+        filt_min_weight = 1
 
-# =====================
-#  float sample
-# =====================
+    if i_opt_flags & HISTO_WEIGHT_MAX:
+        filt_max_weight = 1
 
+    if i_opt_flags & HISTO_LAST_BIN_CLOSED:
+        last_bin_closed = 1
 
-@cython.wraparound(False)
-@cython.boundscheck(False)
-@cython.initializedcheck(False)
-@cython.nonecheck(False)
-cdef int _histogramnd_float_double(float[:] sample,
-                                   double[:] weights,
-                                   int n_dims,
-                                   int n_elem,
-                                   float[:] bins_rng,
-                                   int[:] n_bins,
-                                   numpy.uint32_t[:] histo,
-                                   double[:] cumul,
-                                   int option_flags,
-                                   double weight_min,
-                                   double weight_max) nogil:
+    if i_weights is None:
+        # if weights are not provided there no point in trying to filter them
+        # (!! careful if you change this, some code below relies on it !!)
+        filt_min_weight = 0
+        filt_max_weight = 0
 
-    return histogramnd_c.histogramnd_float_double(&sample[0],
-                                                  &weights[0],
-                                                  n_dims,
-                                                  n_elem,
-                                                  &bins_rng[0],
-                                                  &n_bins[0],
-                                                  &histo[0],
-                                                  &cumul[0],
-                                                  option_flags,
-                                                  weight_min,
-                                                  weight_max)
+        # If the weights array is not provided then there is no point
+        # updating the weighted histogram, only the bin counts (o_histo)
+        # will be filled.
+        # (!! careful if you change this, some code below relies on it !!)
+        o_cumul = None
 
+    weight_idx = -1
+    elem_idx = 0 - i_n_dims
+    max_idx = i_n_elems * i_n_dims - i_n_dims
 
-@cython.wraparound(False)
-@cython.boundscheck(False)
-@cython.initializedcheck(False)
-@cython.nonecheck(False)
-cdef int _histogramnd_float_float(float[:] sample,
-                                  float[:] weights,
-                                  int n_dims,
-                                  int n_elem,
-                                  float[:] bins_rng,
-                                  int[:] n_bins,
-                                  numpy.uint32_t[:] histo,
-                                  double[:] cumul,
-                                  int option_flags,
-                                  float weight_min,
-                                  float weight_max) nogil:
+    with nogil:
+        while elem_idx < max_idx:
+            elem_idx += i_n_dims
+            weight_idx += 1
 
-    return histogramnd_c.histogramnd_float_float(&sample[0],
-                                                 &weights[0],
-                                                 n_dims,
-                                                 n_elem,
-                                                 &bins_rng[0],
-                                                 &n_bins[0],
-                                                 &histo[0],
-                                                 &cumul[0],
-                                                 option_flags,
-                                                 weight_min,
-                                                 weight_max)
+            if filt_min_weight and i_weights[weight_idx] < i_weight_min:
+                continue
+            if filt_max_weight and i_weights[weight_idx] > i_weight_max:
+                continue
 
+            bin_idx = 0
 
-@cython.wraparound(False)
-@cython.boundscheck(False)
-@cython.initializedcheck(False)
-@cython.nonecheck(False)
-cdef int _histogramnd_float_int32_t(float[:] sample,
-                                    numpy.int32_t[:] weights,
-                                    int n_dims,
-                                    int n_elem,
-                                    float[:] bins_rng,
-                                    int[:] n_bins,
-                                    numpy.uint32_t[:] histo,
-                                    double[:] cumul,
-                                    int option_flags,
-                                    numpy.int32_t weight_min,
-                                    numpy.int32_t weight_max) nogil:
+            for i in range(i_n_dims):
+                elem_coord = i_sample[elem_idx+i]
+                # =====================
+                # Element is rejected if any of the following is NOT true :
+                # 1. coordinate is >= than the minimum value
+                # 2. coordinate is <= than the maximum value
+                # 3. coordinate==maximum value and last_bin_closed is True
+                # =====================
+                if elem_coord < g_min[i]:
+                    bin_idx = -1
+                    break
 
-    return histogramnd_c.histogramnd_float_int32_t(&sample[0],
-                                                   &weights[0],
-                                                   n_dims,
-                                                   n_elem,
-                                                   &bins_rng[0],
-                                                   &n_bins[0],
-                                                   &histo[0],
-                                                   &cumul[0],
-                                                   option_flags,
-                                                   weight_min,
-                                                   weight_max)
+                # Here we make the assumption that most of the time
+                # there will be more coordinates inside the grid interval
+                #  (one test)
+                #  than coordinates higher or equal to the max
+                #  (two tests)
+                if elem_coord < g_max[i]:
+                    bin_idx = <long>(bin_idx * i_n_bins[i] +
+                                     (((elem_coord - g_min[i]) * i_n_bins[i]) /
+                                      bins_range[i]))
+                else:
+                    # if equal and the last bin is closed :
+                    #  put it in the last bin
+                    # else : discard
+                    if last_bin_closed and elem_coord == g_max[i]:
+                        bin_idx = (bin_idx + 1) * i_n_bins[i] - 1
+                    else:
+                        bin_idx = -1
+                        break
 
+            # element is out of the grid
+            if bin_idx == -1:
+                continue
 
-# =====================
-#  numpy.int32_t sample
-# =====================
+            if o_histo is not None:
+                o_histo[bin_idx] += 1
 
+            if o_cumul is not None:
+                # not testing the pointer since o_cumul is null if
+                # i_weights is null.
+                o_cumul[bin_idx] += i_weights[weight_idx]
 
-@cython.wraparound(False)
-@cython.boundscheck(False)
-@cython.initializedcheck(False)
-@cython.nonecheck(False)
-cdef int _histogramnd_int32_t_double(numpy.int32_t[:] sample,
-                                     double[:] weights,
-                                     int n_dims,
-                                     int n_elem,
-                                     numpy.int32_t[:] bins_rng,
-                                     int[:] n_bins,
-                                     numpy.uint32_t[:] histo,
-                                     double[:] cumul,
-                                     int option_flags,
-                                     double weight_min,
-                                     double weight_max) nogil:
-
-    return histogramnd_c.histogramnd_int32_t_double(&sample[0],
-                                                    &weights[0],
-                                                    n_dims,
-                                                    n_elem,
-                                                    &bins_rng[0],
-                                                    &n_bins[0],
-                                                    &histo[0],
-                                                    &cumul[0],
-                                                    option_flags,
-                                                    weight_min,
-                                                    weight_max)
-
-
-@cython.wraparound(False)
-@cython.boundscheck(False)
-@cython.initializedcheck(False)
-@cython.nonecheck(False)
-cdef int _histogramnd_int32_t_float(numpy.int32_t[:] sample,
-                                    float[:] weights,
-                                    int n_dims,
-                                    int n_elem,
-                                    numpy.int32_t[:] bins_rng,
-                                    int[:] n_bins,
-                                    numpy.uint32_t[:] histo,
-                                    double[:] cumul,
-                                    int option_flags,
-                                    float weight_min,
-                                    float weight_max) nogil:
-
-    return histogramnd_c.histogramnd_int32_t_float(&sample[0],
-                                                   &weights[0],
-                                                   n_dims,
-                                                   n_elem,
-                                                   &bins_rng[0],
-                                                   &n_bins[0],
-                                                   &histo[0],
-                                                   &cumul[0],
-                                                   option_flags,
-                                                   weight_min,
-                                                   weight_max)
-
-
-@cython.wraparound(False)
-@cython.boundscheck(False)
-@cython.initializedcheck(False)
-@cython.nonecheck(False)
-cdef int _histogramnd_int32_t_int32_t(numpy.int32_t[:] sample,
-                                      numpy.int32_t[:] weights,
-                                      int n_dims,
-                                      int n_elem,
-                                      numpy.int32_t[:] bins_rng,
-                                      int[:] n_bins,
-                                      numpy.uint32_t[:] histo,
-                                      double[:] cumul,
-                                      int option_flags,
-                                      numpy.int32_t weight_min,
-                                      numpy.int32_t weight_max) nogil:
-
-    return histogramnd_c.histogramnd_int32_t_int32_t(&sample[0],
-                                                     &weights[0],
-                                                     n_dims,
-                                                     n_elem,
-                                                     &bins_rng[0],
-                                                     &n_bins[0],
-                                                     &histo[0],
-                                                     &cumul[0],
-                                                     option_flags,
-                                                     weight_min,
-                                                     weight_max)
+    return 0
