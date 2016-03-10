@@ -297,7 +297,9 @@ def histogramnd(sample,
                                       weight_min,
                                       weight_max)
     except TypeError as ex:
-        raise_unsupported_type()
+        raise TypeError('Case not supported - sample:{0} '
+                        'and weights:{1}.'
+                        ''.format(sample_type, weights_type))
 
     if histo_rc != 0:
             raise Exception('histogramnd returned an error : {0}'
