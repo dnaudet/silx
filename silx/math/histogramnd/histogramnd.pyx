@@ -266,15 +266,6 @@ def histogramnd(sample,
 
     n_elem = sample.size // n_dims
 
-    # wanted to store the functions in a dict (with the supported types
-    # as keys, but I couldn't find a way to make it work with cdef
-    # functions. so I have to explicitly list them all...
-
-    def raise_unsupported_type():
-        raise TypeError('Case not supported - sample:{0} '
-                        'and weights:{1}.'
-                        ''.format(sample_type, weights_type))
-
     sample_c = numpy.ascontiguousarray(sample.reshape((sample.size,)))
 
     weights_c = (numpy.ascontiguousarray(weights.reshape((weights.size,)))
